@@ -3,6 +3,14 @@ Swatch is an (hopefully) very simple wrapper around the
 
 Binaries are available on [Bintray](https://bintray.com/pkg/show/general/mcaserta/github-releases/swatch).
 
+Inclusion in build.sbt: 
+
+```sbt
+
+libraryDependencies += "com.mirkocaserta.swatch" %% "swatch" % "1.0.2-SNAPSHOT"
+
+```
+
 Usage is pretty straightforward:
 
 ```scala
