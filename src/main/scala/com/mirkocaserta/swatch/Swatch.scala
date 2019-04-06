@@ -1,13 +1,21 @@
 package com.mirkocaserta.swatch
 
+import java.nio.file.StandardWatchEventKinds.{ENTRY_CREATE, ENTRY_DELETE, ENTRY_MODIFY}
+
 import akka.actor.ActorRef
+
 import concurrent.future
 import java.nio.file._
 import java.nio.file.attribute.BasicFileAttributes
 import java.nio.file.WatchEvent.Kind
+
+import com.sun.nio.file.SensitivityWatchEventModifier
+
 import language.implicitConversions
 import org.slf4j.LoggerFactory
-import util.{Success, Failure, Try}
+
+import scala.collection.mutable.ArrayBuffer
+import util.{Failure, Success, Try}
 
 /**
  * A wrapper for a Java 7 [[java.nio.file.WatchService]].
@@ -48,6 +56,13 @@ object Swatch {
       case Overflow ⇒ OVERFLOW
     }
   }
+
+  private[this] implicit def eventType2KindFlat(et: EventType): WatchEvent.Kind[Any] = {
+    // Force it
+    eventType2Kind(et).asInstanceOf[WatchEvent.Kind[Any]]
+  }
+
+
 
   private[this] implicit def kind2EventType(kind: Kind[Path]) = {
     import java.nio.file.StandardWatchEventKinds._
@@ -98,7 +113,15 @@ object Swatch {
           FileVisitResult.CONTINUE
         }
       })
-    } else path.register(watchService, eventTypes map eventType2Kind: _*)
+    } else {
+      // Original Swatch code
+      // path.register(watchService, eventTypes map eventType2Kind: _*)
+
+      // MacOSX performance improvement
+      val javaEventTypes : Array[Kind[_]] = Array(eventTypes map eventType2KindFlat : _*)
+      path.register(watchService, javaEventTypes, SensitivityWatchEventModifier.HIGH)
+
+    }
 
     import concurrent.ExecutionContext.Implicits.global
 
