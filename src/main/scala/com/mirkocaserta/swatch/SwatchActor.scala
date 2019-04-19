@@ -33,4 +33,9 @@ class SwatchActor extends Actor with ActorLogging {
       watch(path, eventTypes, lstnr, recurse)
   }
 
+  override def postStop() = {
+    log.info("postStop(): closing all watches due to actor shutdown")
+    closeAll()
+  }
+
 }

@@ -4,7 +4,7 @@ import java.nio.file.StandardWatchEventKinds.{ENTRY_CREATE, ENTRY_DELETE, ENTRY_
 
 import akka.actor.ActorRef
 
-import concurrent.future
+import concurrent.{Future, future}
 import java.nio.file._
 import java.nio.file.attribute.BasicFileAttributes
 import java.nio.file.WatchEvent.Kind
@@ -14,6 +14,7 @@ import com.sun.nio.file.SensitivityWatchEventModifier
 import language.implicitConversions
 import org.slf4j.LoggerFactory
 
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import util.{Failure, Success, Try}
 
@@ -90,6 +91,10 @@ object Swatch {
    */
   case class Watch(path: Path, eventTypes: Seq[EventType], recurse: Boolean = false, listener: Option[ActorRef] = None)
 
+
+
+  val watchServices : mutable.Queue[WatchService] = mutable.Queue()
+
   /**
    * Watch the given path by using a Java 7
    * [[java.nio.file.WatchService]].
@@ -105,6 +110,9 @@ object Swatch {
             recurse: Boolean = false) {
     log.debug(s"watch(): entering; path='$path', eventTypes='$eventTypes', listener='$listener', recurse=$recurse")
     val watchService = FileSystems.getDefault.newWatchService
+    log.debug(s"watch(): enqueued watchService: ${watchService}  to size : ${watchServices.size+1}")
+    watchServices.enqueue(watchService)
+
 
     if (recurse) {
       Files.walkFileTree(path, new SimpleFileVisitor[Path] {
@@ -113,23 +121,25 @@ object Swatch {
           FileVisitResult.CONTINUE
         }
       })
+
     } else {
       // Original Swatch code
       // path.register(watchService, eventTypes map eventType2Kind: _*)
 
       // MacOSX performance improvement
       val javaEventTypes : Array[Kind[_]] = Array(eventTypes map eventType2KindFlat : _*)
-      path.register(watchService, javaEventTypes, SensitivityWatchEventModifier.HIGH)
+      val watchKey = path.register(watchService, javaEventTypes, SensitivityWatchEventModifier.HIGH)
 
     }
 
     import concurrent.ExecutionContext.Implicits.global
 
-    future {
+    Future {
       import collection.JavaConversions._
       var loop = true
 
       while (loop) {
+        log.debug(s"watch(): looping future; path='$path', eventTypes='$eventTypes', listener='$listener', recurse=$recurse")
         Try(watchService.take) match {
           case Success(key) ⇒
             key.pollEvents map {
@@ -154,12 +164,36 @@ object Swatch {
                     }
                 }
             }
-          case Failure(e) ⇒ // ignore failure, just as IRL
+          case Failure(e) ⇒
+            // Behavior Change - Exit on Failure  to complete Future ignore failure, just as IRL
+            if ( e.isInstanceOf[ClosedWatchServiceException] ) {
+              log.debug(s"watch(): ClosedWatchServiceException, stopping loop; e='${e.getClass.getName}', path='$path', eventTypes='$eventTypes', listener='$listener', recurse=$recurse")
+              loop = false
+            } else {
+              log.error(s"watch(): Unexpected: ${e.getClass.getName}, stopping loop; e='${e.getClass.getName}', path='$path', eventTypes='$eventTypes', listener='$listener', recurse=$recurse")
+            }
+
         }
       }
+
+      log.debug(s"watch(): completed future; path='$path', eventTypes='$eventTypes', listener='$listener', recurse=$recurse")
+
     }
-    log.debug(s"watch(): exiting; path='$path', eventTypes='$eventTypes', listener='$listener', recurse=$recurse")
+    log.debug(s"watch(): completed watch; path='$path', eventTypes='$eventTypes', listener='$listener', recurse=$recurse")
   }
 
+
+  def closeAll(): Unit = {
+    log.debug(s"watch(): closing all watchServices of size ${watchServices.size}")
+
+    watchServices.dequeueAll { watchService =>
+      log.debug(s"watch(): closing watchService: ${watchService}")
+      watchService.close()
+      true
+    }
+
+    log.debug(s"watch(): closedAll watchServices down to size ${watchServices.size}")
+
+  }
 }
 
