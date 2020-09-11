@@ -4,7 +4,9 @@ organization := "com.mirkocaserta.swatch"
 
 version := "1.0.2-SNAPSHOT"
 
-scalaVersion := "2.12.8"
+// scalaVersion := "2.12.8"
+// 2020.4 Flatmap
+scalaVersion := "2.11.12"
 
 scalacOptions ++= Seq("-encoding", "UTF-8", "-deprecation", "-unchecked", "-feature")
 
